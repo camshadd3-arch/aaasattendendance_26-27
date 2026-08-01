@@ -171,3 +171,10 @@ export const lookupMember = createServerFn({ method: 'GET' })
         (member.membershipType === 'premium' || totalPoints >= 50),
     }
   })
+
+export const getAllMembers = createServerFn({ method: 'GET' }).handler(async () => {
+  return db
+    .select()
+    .from(members)
+    .orderBy(asc(members.name))
+})
