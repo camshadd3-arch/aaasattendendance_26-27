@@ -178,3 +178,53 @@ export const getAllMembers = createServerFn({ method: 'GET' }).handler(async () 
     .from(members)
     .orderBy(asc(members.name))
 })
+
+export const getMemberDashboard = createServerFn({ method: 'GET' }).handler(async () => {
+  const memberRows = await db
+    .select({
+      id: members.id,
+      name: members.name,
+      email: members.email,
+      membershipType: members.membershipType,
+      membershipPaid: members.membershipPaid,
+      zeffyCompleted: members.zeffyCompleted,
+      socialHandle: members.socialHandle,
+    })
+    .from(members)
+    .orderBy(asc(members.name))
+
+  const dashboard = await Promise.all(
+    memberRows.map(async (member) => {
+      const attendanceRows = await db
+        .select({
+          points: attendance.pointsAwarded,
+        })
+        .from(attendance)
+        .where(eq(attendance.memberId, member.id))
+
+      const bonusRows = await db
+        .select({
+          points: bonusPoints.pointsAwarded,
+        })
+        .from(bonusPoints)
+        .where(eq(bonusPoints.memberId, member.id))
+
+      const attendanceTotal = attendanceRows.reduce((sum, row) => sum + row.points, 0)
+      const bonusTotal = bonusRows.reduce((sum, row) => sum + row.points, 0)
+      const totalPoints = attendanceTotal + bonusTotal
+      const attendanceCount = attendanceRows.length
+      const rewardTier = getRewardTier(totalPoints)
+
+      return {
+        ...member,
+        attendanceTotal,
+        bonusTotal,
+        totalPoints,
+        attendanceCount,
+        rewardTier,
+      }
+    }),
+  )
+
+  return dashboard
+})
