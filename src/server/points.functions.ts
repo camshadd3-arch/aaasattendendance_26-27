@@ -405,3 +405,23 @@ export const updateEvent = createServerFn({ method: 'POST' })
     if (!created) throw new Error('Unable to create event.')
     return { success: true }
   })
+
+  export const deleteMember = createServerFn({ method: 'POST' })
+  .inputValidator((data: { memberId: number }) => {
+    if (!Number.isInteger(data.memberId) || data.memberId < 1) {
+      throw new Error('Invalid member.')
+    }
+    return data
+  })
+  .handler(async ({ data }) => {
+    await db.delete(attendance).where(eq(attendance.memberId, data.memberId))
+    await db.delete(bonusPoints).where(eq(bonusPoints.memberId, data.memberId))
+
+    const [deleted] = await db
+      .delete(members)
+      .where(eq(members.id, data.memberId))
+      .returning({ id: members.id })
+
+    if (!deleted) throw new Error('Member not found.')
+    return { success: true }
+  })

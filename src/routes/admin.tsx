@@ -9,6 +9,7 @@ import {
   lookupMember,
   updateAttendancePoints,
   updateEvent,
+  deleteMember
 } from '@/server/points.functions'
 import { EventManager } from '@/components/EventManager'
 
@@ -166,6 +167,25 @@ const [search, setSearch] = useState('')
     }
   }
 
+async function handleDeleteMember() {
+  if (!selectedMember) return
+
+  const typed = window.prompt(
+    `Type the member's full name to confirm deleting ${selectedMember.member.name}:`
+  )
+
+  if (typed !== selectedMember.member.name) return
+
+  try {
+    await deleteMember({ data: { memberId: selectedMember.member.id } })
+    await loadMembers()
+    setSelectedMember(null)
+    setSelectedEmail(null)
+  } catch (err) {
+    setDetailsError(err instanceof Error ? err.message : 'Unable to delete member.')
+  }
+}
+
   const totalMembers = members.length
   const totalPoints = members.reduce((sum, member) => sum + member.totalPoints, 0)
 
@@ -285,6 +305,10 @@ const [search, setSearch] = useState('')
                 <button type="button" onClick={handleAddBonus} style={primaryButton}>
                   + Add bonus points
                 </button>
+
+                <button type="button" onClick={handleDeleteMember} style={dangerButton}>
+  Delete member
+</button>
 
                 <div style={miniGrid}>
                   <MiniStat label="Total points" value={String(selectedMember.totalPoints)} />
