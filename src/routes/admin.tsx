@@ -1,6 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState, type CSSProperties } from 'react'
-import { getMemberDashboard, lookupMember } from '@/server/points.functions'
+import {
+  addBonusPointsForMember,
+  archiveEvent,
+  deleteAttendanceEntry,
+  getAllEvents,
+  getMemberDashboard,
+  lookupMember,
+  updateAttendancePoints,
+  updateEvent,
+} from '@/server/points.functions'
+import { EventManager } from '@/components/EventManager'
 
 export const Route = createFileRoute('/admin')({
   component: AdminPage,
@@ -8,6 +18,7 @@ export const Route = createFileRoute('/admin')({
 
 type MemberRow = Awaited<ReturnType<typeof getMemberDashboard>>[number]
 type MemberDetails = NonNullable<Awaited<ReturnType<typeof lookupMember>>>
+type EventRow = Awaited<ReturnType<typeof getAllEvents>>[number]
 
 function formatDate(value?: string | null) {
   if (!value) return '-'
@@ -28,29 +39,128 @@ function AdminPage() {
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [detailsError, setDetailsError] = useState('')
 
-  useEffect(() => {
-    getMemberDashboard()
-      .then(setMembers)
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load members.')
-      })
-      .finally(() => setLoading(false))
-  }, [])
+const [events, setEvents] = useState<EventRow[]>([])
+const [eventsLoading, setEventsLoading] = useState(true)
+const [eventsError, setEventsError] = useState('')
 
-  async function openMember(member: MemberRow) {
-    setSelectedEmail(member.email)
-    setSelectedMember(null)
-    setDetailsError('')
-    setDetailsLoading(true)
+  const attendance = selectedMember?.attendance ?? []
+  const bonuses = selectedMember?.bonuses ?? []
 
+  async function loadMembers() {
+    setLoading(true)
+    setError('')
     try {
-      const result = await lookupMember({ data: { email: member.email } })
+      const result = await getMemberDashboard()
+      setMembers(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load members.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadEvents() {
+  setEventsLoading(true)
+  setEventsError('')
+  try {
+    const result = await getAllEvents()
+    setEvents(result)
+  } catch (err) {
+    setEventsError(err instanceof Error ? err.message : 'Failed to load events.')
+  } finally {
+    setEventsLoading(false)
+  }
+}
+
+  async function loadMemberDetails(email: string) {
+    setDetailsLoading(true)
+    setDetailsError('')
+    try {
+      const result = await lookupMember({ data: { email } })
       if (!result) throw new Error('No member record found for that email.')
       setSelectedMember(result)
     } catch (err) {
       setDetailsError(err instanceof Error ? err.message : 'Failed to load member details.')
+      setSelectedMember(null)
     } finally {
       setDetailsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadMembers()
+  }, [])
+
+  async function openMember(member: MemberRow) {
+    setSelectedEmail(member.email)
+    await loadMemberDetails(member.email)
+  }
+
+  async function refreshSelectedMember() {
+    if (!selectedEmail) return
+    await loadMembers()
+    await loadMemberDetails(selectedEmail)
+  }
+
+  async function handleEditAttendance(attendanceId: number, currentPoints: number) {
+    const raw = window.prompt('Enter the new attendance points:', String(currentPoints))
+    if (raw === null) return
+
+    const pointsAwarded = Number(raw)
+    if (!Number.isInteger(pointsAwarded) || pointsAwarded < 0) {
+      setDetailsError('Attendance points must be a whole number 0 or greater.')
+      return
+    }
+
+    setDetailsError('')
+    try {
+      await updateAttendancePoints({ data: { attendanceId, pointsAwarded } })
+      await refreshSelectedMember()
+    } catch (err) {
+      setDetailsError(err instanceof Error ? err.message : 'Unable to update attendance points.')
+    }
+  }
+
+  async function handleDeleteAttendance(attendanceId: number) {
+    const confirmed = window.confirm('Delete this attendance record? This cannot be undone.')
+    if (!confirmed) return
+
+    setDetailsError('')
+    try {
+      await deleteAttendanceEntry({ data: { attendanceId } })
+      await refreshSelectedMember()
+    } catch (err) {
+      setDetailsError(err instanceof Error ? err.message : 'Unable to delete attendance record.')
+    }
+  }
+
+  async function handleAddBonus() {
+    if (!selectedMember) return
+
+    const detail = window.prompt('Enter a short description for this bonus:')
+    if (detail === null) return
+
+    const pointsRaw = window.prompt('How many bonus points?', '5')
+    if (pointsRaw === null) return
+
+    const pointsAwarded = Number(pointsRaw)
+    if (!Number.isInteger(pointsAwarded) || pointsAwarded < 1) {
+      setDetailsError('Bonus points must be a whole number greater than 0.')
+      return
+    }
+
+    setDetailsError('')
+    try {
+      await addBonusPointsForMember({
+        data: {
+          memberId: selectedMember.member.id,
+          pointsAwarded,
+          detail: detail.trim(),
+        },
+      })
+      await refreshSelectedMember()
+    } catch (err) {
+      setDetailsError(err instanceof Error ? err.message : 'Unable to add bonus points.')
     }
   }
 
@@ -137,11 +247,15 @@ function AdminPage() {
                   <div style={badge}>{selectedMember.rewardTier}</div>
                 </div>
 
+                <button type="button" onClick={handleAddBonus} style={primaryButton}>
+                  + Add bonus points
+                </button>
+
                 <div style={miniGrid}>
                   <MiniStat label="Total points" value={String(selectedMember.totalPoints)} />
                   <MiniStat label="Attendance points" value={String(selectedMember.attendanceTotal)} />
                   <MiniStat label="Bonus points" value={String(selectedMember.bonusTotal)} />
-                  <MiniStat label="Events attended" value={String(selectedMember.attendance.length)} />
+                  <MiniStat label="Events attended" value={String((selectedMember.attendance ?? []).length)} />
                 </div>
 
                 <div style={infoGrid}>
@@ -157,11 +271,11 @@ function AdminPage() {
 
                 <div>
                   <h4 style={sectionHeading}>Attendance history</h4>
-                  {selectedMember.attendance.length === 0 ? (
+                  {(selectedMember?.attendance ?? []).length === 0 ? (
                     <p style={muted}>No attendance recorded yet.</p>
                   ) : (
                     <div style={list}>
-                      {selectedMember.attendance.map((item) => (
+                      {(selectedMember?.attendance ?? []).map((item) => (
                         <div key={item.id} style={listItem}>
                           <div>
                             <strong>{item.name}</strong>
@@ -169,7 +283,24 @@ function AdminPage() {
                               {formatDate(item.date)} · {item.category}
                             </p>
                           </div>
-                          <strong>+{item.points}</strong>
+
+                          <div style={rowActions}>
+                            <strong>+{item.points}</strong>
+                            <button
+                              type="button"
+                              onClick={() => handleEditAttendance(item.id, item.points)}
+                              style={secondaryButton}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttendance(item.id)}
+                              style={dangerButton}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -178,11 +309,11 @@ function AdminPage() {
 
                 <div>
                   <h4 style={sectionHeading}>Bonus points</h4>
-                  {selectedMember.bonuses.length === 0 ? (
+                  {(selectedMember?.bonuses ?? []).length === 0 ? (
                     <p style={muted}>No bonus points recorded yet.</p>
                   ) : (
                     <div style={list}>
-                      {selectedMember.bonuses.map((item) => (
+                      {(selectedMember?.bonuses ?? []).map((item) => (
                         <div key={item.id} style={listItem}>
                           <div>
                             <strong>{item.detail || item.type}</strong>
@@ -199,6 +330,8 @@ function AdminPage() {
           </aside>
         </section>
       )}
+
+      <EventManager />
     </main>
   )
 }
@@ -353,6 +486,41 @@ const badge: CSSProperties = {
   color: '#fff',
   fontSize: 14,
   fontWeight: 700,
+}
+
+const primaryButton: CSSProperties = {
+  border: 'none',
+  borderRadius: 14,
+  padding: '12px 14px',
+  background: '#171717',
+  color: '#fff',
+  fontWeight: 700,
+  cursor: 'pointer',
+}
+
+const secondaryButton: CSSProperties = {
+  border: '1px solid #cbbda8',
+  borderRadius: 10,
+  padding: '8px 10px',
+  background: '#fff',
+  cursor: 'pointer',
+}
+
+const dangerButton: CSSProperties = {
+  border: '1px solid #d8a7a7',
+  borderRadius: 10,
+  padding: '8px 10px',
+  background: '#fff5f5',
+  color: '#8b1c1c',
+  cursor: 'pointer',
+}
+
+const rowActions: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+  justifyContent: 'end',
 }
 
 const miniGrid: CSSProperties = {
