@@ -357,3 +357,51 @@ export const updateEvent = createServerFn({ method: 'POST' })
     if (!updated) throw new Error('Event not found.')
     return { success: true }
   })
+
+  export const createEvent = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: {
+      name: string
+      eventDate: string
+      category: string
+      points: number
+      description?: string
+    }) => {
+      const name = data.name.trim()
+      const eventDate = data.eventDate.trim()
+      const category = data.category.trim()
+      const description = data.description?.trim() || ''
+
+      if (name.length < 2) throw new Error('Event name is too short.')
+      if (!eventDate) throw new Error('Choose a date.')
+      if (!category) throw new Error('Choose a category.')
+      if (!Number.isInteger(data.points) || data.points < 0) {
+        throw new Error('Points must be a whole number.')
+      }
+
+      return { ...data, name, eventDate, category, description }
+    },
+  )
+  .handler(async ({ data }) => {
+    const slug = data.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+
+    const [created] = await db
+      .insert(events)
+      .values({
+        slug,
+        name: data.name,
+        eventDate: data.eventDate,
+        category: data.category,
+        points: data.points,
+        description: data.description,
+        active: true,
+      })
+      .returning({ id: events.id })
+
+    if (!created) throw new Error('Unable to create event.')
+    return { success: true }
+  })
