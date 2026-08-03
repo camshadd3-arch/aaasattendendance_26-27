@@ -43,6 +43,8 @@ const [events, setEvents] = useState<EventRow[]>([])
 const [eventsLoading, setEventsLoading] = useState(true)
 const [eventsError, setEventsError] = useState('')
 
+const [search, setSearch] = useState('')
+
   const attendance = selectedMember?.attendance ?? []
   const bonuses = selectedMember?.bonuses ?? []
 
@@ -167,6 +169,19 @@ const [eventsError, setEventsError] = useState('')
   const totalMembers = members.length
   const totalPoints = members.reduce((sum, member) => sum + member.totalPoints, 0)
 
+  const filteredMembers = members.filter((member) => {
+  const query = search.trim().toLowerCase()
+  if (!query) return true
+
+  return [
+    member.name,
+    member.email,
+    member.membershipType,
+    member.rewardTier,
+    member.socialHandle ?? '',
+  ].some((value) => value.toLowerCase().includes(query))
+})
+
   return (
     <main style={page}>
       <section style={header}>
@@ -187,6 +202,23 @@ const [eventsError, setEventsError] = useState('')
       {!loading && !error && (
         <section style={layout}>
           <div style={tableCard}>
+            <div style={{ padding: '16px 18px 0' }}>
+  <input
+    type="text"
+    placeholder="Search members by name, email, tier, or handle..."
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    style={{
+      width: '100%',
+      padding: '12px 14px',
+      border: '1px solid #cbbda8',
+      borderRadius: 12,
+      fontSize: 16,
+      outline: 'none',
+      boxSizing: 'border-box',
+    }}
+  />
+</div>
             <div style={tableWrap}>
               <table style={table}>
                 <thead>
@@ -200,7 +232,7 @@ const [eventsError, setEventsError] = useState('')
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map((member) => {
+                 {filteredMembers.map((member) => {
                     const isSelected = selectedEmail === member.email
                     return (
                       <tr
@@ -221,6 +253,9 @@ const [eventsError, setEventsError] = useState('')
                     )
                   })}
                 </tbody>
+                {filteredMembers.length === 0 && (
+  <p style={{ padding: '16px 18px' }}>No members match your search.</p>
+)}
               </table>
             </div>
           </div>
