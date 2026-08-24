@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { db } from '../../db/index.js'
 import { attendance, bonusPoints, events, members } from '../../db/schema.js'
+import { requireAdmin } from './admin-auth.functions'
 
 type AttendanceInput = {
   eventId: number
@@ -173,6 +174,7 @@ export const lookupMember = createServerFn({ method: 'GET' })
   })
 
 export const getAllMembers = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdmin()
   return db
     .select()
     .from(members)
@@ -180,6 +182,7 @@ export const getAllMembers = createServerFn({ method: 'GET' }).handler(async () 
 })
 
 export const getMemberDashboard = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdmin()
   const memberRows = await db
     .select({
       id: members.id,
@@ -240,6 +243,7 @@ export const updateAttendancePoints = createServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
+    await requireAdmin()
     const [updated] = await db
       .update(attendance)
       .set({ pointsAwarded: data.pointsAwarded })
@@ -258,6 +262,7 @@ export const deleteAttendanceEntry = createServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
+    await requireAdmin()
     const [deleted] = await db
       .delete(attendance)
       .where(eq(attendance.id, data.attendanceId))
@@ -282,6 +287,7 @@ export const addBonusPointsForMember = createServerFn({ method: 'POST' })
     },
   )
   .handler(async ({ data }) => {
+    await requireAdmin()
     const [member] = await db.select().from(members).where(eq(members.id, data.memberId)).limit(1)
     if (!member) throw new Error('Member not found.')
 
@@ -306,6 +312,7 @@ export const addBonusPointsForMember = createServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
+    await requireAdmin()
     const [updated] = await db
       .update(events)
       .set({
@@ -321,6 +328,7 @@ export const addBonusPointsForMember = createServerFn({ method: 'POST' })
     return { success: true }
   })
   export const getAllEvents = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdmin()
   return db.select().from(events).orderBy(asc(events.eventDate))
 })
 
@@ -343,6 +351,7 @@ export const updateEvent = createServerFn({ method: 'POST' })
     return { ...data, name, category, description }
   })
   .handler(async ({ data }) => {
+    await requireAdmin()
     const [updated] = await db
       .update(events)
       .set({
@@ -383,6 +392,7 @@ export const updateEvent = createServerFn({ method: 'POST' })
     },
   )
   .handler(async ({ data }) => {
+    await requireAdmin()
     const slug = data.name
       .trim()
       .toLowerCase()
@@ -414,6 +424,7 @@ export const updateEvent = createServerFn({ method: 'POST' })
     return data
   })
   .handler(async ({ data }) => {
+    await requireAdmin()
     await db.delete(attendance).where(eq(attendance.memberId, data.memberId))
     await db.delete(bonusPoints).where(eq(bonusPoints.memberId, data.memberId))
 
