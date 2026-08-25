@@ -141,7 +141,7 @@ export const lookupMember = createServerFn({ method: 'GET' })
         category: events.category,
         date: events.eventDate,
         points: attendance.pointsAwarded,
-        createdAt: attendance.checkedInAt,
+      createdAt: sql<string>`${attendance.checkedInAt}::text`,
       })
       .from(attendance)
       .innerJoin(events, eq(attendance.eventId, events.id))
@@ -149,10 +149,17 @@ export const lookupMember = createServerFn({ method: 'GET' })
       .orderBy(desc(attendance.checkedInAt))
 
     const bonusRows = await db
-      .select()
-      .from(bonusPoints)
-      .where(eq(bonusPoints.memberId, member.id))
-      .orderBy(desc(bonusPoints.createdAt))
+  .select({
+    id: bonusPoints.id,
+    memberId: bonusPoints.memberId,
+    type: bonusPoints.type,
+    detail: bonusPoints.detail,
+    pointsAwarded: bonusPoints.pointsAwarded,
+    createdAt: sql<string>`${bonusPoints.createdAt}::text`,
+  })
+  .from(bonusPoints)
+  .where(eq(bonusPoints.memberId, member.id))
+  .orderBy(desc(bonusPoints.createdAt))
 
     const attendanceTotal = attendanceRows.reduce((sum, row) => sum + row.points, 0)
     const bonusTotal = bonusRows.reduce((sum, row) => sum + row.pointsAwarded, 0)
