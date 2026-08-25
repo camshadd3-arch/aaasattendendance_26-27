@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import {
   addBonusPointsForMember,
   archiveEvent,
@@ -9,9 +9,10 @@ import {
   lookupMember,
   updateAttendancePoints,
   updateEvent,
-  deleteMember
+deleteMember,
 } from '@/server/points.functions'
 import { EventManager } from '@/components/EventManager'
+import { getAdminSession, loginAdmin, logoutAdmin } from '@/server/admin-auth.functions'
 
 export const Route = createFileRoute('/admin')({
   component: AdminPage,
@@ -34,6 +35,13 @@ function AdminPage() {
   const [members, setMembers] = useState<MemberRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authenticated, setAuthenticated] = useState(false)
+  const [adminEmail, setAdminEmail] = useState('')
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
 
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
   const [selectedMember, setSelectedMember] = useState<MemberDetails | null>(null)
@@ -91,8 +99,57 @@ const [search, setSearch] = useState('')
   }
 
   useEffect(() => {
-    loadMembers()
+    async function checkAdminSession() {
+      setAuthLoading(true)
+      try {
+        const session = await getAdminSession()
+        setAuthenticated(session.authenticated)
+        if (session.authenticated) {
+          setAdminEmail(session.email)
+          await Promise.all([loadMembers(), loadEvents()])
+        }
+      } catch (err) {
+        setLoginError(err instanceof Error ? err.message : 'Unable to verify admin access.')
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+
+    checkAdminSession()
   }, [])
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoginLoading(true)
+    setLoginError('')
+
+    try {
+      const result = await loginAdmin({
+        data: {
+          email: loginEmail,
+          password: loginPassword,
+        },
+      })
+      setAuthenticated(result.authenticated)
+      setAdminEmail(result.email)
+      setLoginPassword('')
+      await Promise.all([loadMembers(), loadEvents()])
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Unable to sign in.')
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  async function handleLogout() {
+    await logoutAdmin()
+    setAuthenticated(false)
+    setAdminEmail('')
+    setSelectedMember(null)
+    setSelectedEmail(null)
+    setMembers([])
+    setEvents([])
+  }
 
   async function openMember(member: MemberRow) {
     setSelectedEmail(member.email)
@@ -202,17 +259,83 @@ async function handleDeleteMember() {
   ].some((value) => value.toLowerCase().includes(query))
 })
 
+  if (authLoading) {
+    return (
+      <main style={authPage}>
+        <section style={loginCard}>
+          <p style={loginEyebrow}>AAAS / EXECUTIVE ACCESS</p>
+          <h1 style={title}>Admin Dashboard</h1>
+          <p style={subtitle}>Verifying your admin session...</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (!authenticated) {
+    return (
+      <main style={authPage}>
+        <section style={loginCard}>
+          <p style={loginEyebrow}>AAAS / EXECUTIVE ACCESS</p>
+          <h1 style={title}>Admin Dashboard</h1>
+          <p style={loginIntro}>Sign in with an approved AAAS admin account to manage attendance, points, members, and events.</p>
+
+          <form onSubmit={handleLogin} style={loginForm}>
+            <label style={loginLabel}>
+              Admin Email
+              <input
+                type="email"
+                autoComplete="username"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="you@school.edu"
+                style={loginInput}
+                required
+              />
+            </label>
+
+            <label style={loginLabel}>
+              Password
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="Enter admin password"
+                style={loginInput}
+                required
+              />
+            </label>
+
+            {loginError && <p style={loginErrorStyle}>{loginError}</p>}
+
+            <button type="submit" disabled={loginLoading} style={loginButton}>
+              {loginLoading ? 'Signing in...' : 'Sign in to AAAS Admin'}
+            </button>
+          </form>
+
+          <p style={loginNote}>Admin access is limited to emails configured by the Membership Chair/AAAS leadership.</p>
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main style={page}>
       <section style={header}>
         <div>
+          <p style={loginEyebrow}>SIGNED IN AS {adminEmail}</p>
           <h1 style={title}>AAAS Admin Dashboard</h1>
           <p style={subtitle}>View all members in one place.</p>
         </div>
 
-        <div style={stats}>
-          <StatCard label="Members" value={String(totalMembers)} />
-          <StatCard label="Total points" value={String(totalPoints)} />
+        <div style={headerActions}>
+          <div style={stats}>
+            <StatCard label="Members" value={String(totalMembers)} />
+            <StatCard label="Total points" value={String(totalPoints)} />
+          </div>
+          <button type="button" onClick={handleLogout} style={secondaryButton}>
+            Sign out
+          </button>
         </div>
       </section>
 
@@ -422,6 +545,93 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   )
 }
 
+const authPage: CSSProperties = {
+  minHeight: '100vh',
+  display: 'grid',
+  placeItems: 'center',
+  padding: 24,
+  background: '#171717',
+  color: '#f5f0e6',
+  fontFamily: 'system-ui, sans-serif',
+}
+
+const loginCard: CSSProperties = {
+  width: 'min(100%, 520px)',
+  padding: 36,
+  border: '1px solid #625e56',
+  borderRadius: 24,
+  background: '#fffaf0',
+  color: '#171717',
+  boxShadow: '12px 12px 0 #d7ff4f',
+}
+
+const loginEyebrow: CSSProperties = {
+  margin: '0 0 10px',
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase',
+}
+
+const loginIntro: CSSProperties = {
+  fontSize: 16,
+  lineHeight: 1.6,
+  margin: '18px 0 0',
+  color: '#5c574e',
+}
+
+const loginForm: CSSProperties = {
+  display: 'grid',
+  gap: 16,
+  marginTop: 28,
+}
+
+const loginLabel: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  fontSize: 11,
+  fontWeight: 900,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+}
+
+const loginInput: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  minHeight: 48,
+  padding: '0 14px',
+  border: '1px solid #171717',
+  borderRadius: 12,
+  background: '#f5f0e6',
+  fontSize: 16,
+}
+
+const loginButton: CSSProperties = {
+  minHeight: 50,
+  border: 'none',
+  borderRadius: 12,
+  background: '#171717',
+  color: '#fff',
+  fontWeight: 800,
+  cursor: 'pointer',
+}
+
+const loginErrorStyle: CSSProperties = {
+  margin: 0,
+  padding: 12,
+  borderRadius: 10,
+  background: '#ffd2c4',
+  color: '#8b1c1c',
+  fontSize: 13,
+}
+
+const loginNote: CSSProperties = {
+  margin: '20px 0 0',
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: '#6f6a61',
+}
+
 const page: CSSProperties = {
   minHeight: '100vh',
   background: '#f5f0e6',
@@ -450,6 +660,13 @@ const subtitle: CSSProperties = {
   fontSize: 22,
   marginTop: 18,
   marginBottom: 0,
+}
+
+const headerActions: CSSProperties = {
+  display: 'flex',
+  alignItems: 'end',
+  gap: 12,
+  flexWrap: 'wrap',
 }
 
 const stats: CSSProperties = {
