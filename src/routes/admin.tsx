@@ -22,13 +22,34 @@ type MemberRow = Awaited<ReturnType<typeof getMemberDashboard>>[number]
 type MemberDetails = NonNullable<Awaited<ReturnType<typeof lookupMember>>>
 type EventRow = Awaited<ReturnType<typeof getAllEvents>>[number]
 
-function formatDate(value?: string | null) {
+function formatDate(value?: string | Date | null) {
   if (!value) return '-'
+
+  let date: Date
+
+  if (value instanceof Date) {
+    date = value
+  } else {
+    const text = String(value).trim()
+
+    if (!text) return '-'
+
+    // Date-only database values need a local midday time to avoid
+    // shifting to the previous day in some time zones.
+    date = /^\d{4}-\d{2}-\d{2}$/.test(text)
+      ? new Date(`${text}T12:00:00`)
+      : new Date(text)
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  }).format(new Date(`${value}T12:00:00`))
+  }).format(date)
 }
 
 function AdminPage() {
